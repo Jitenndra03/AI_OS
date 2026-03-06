@@ -296,7 +296,7 @@ It aims to explore the intersection of **operating systems, system monitoring, a
 Aditya Srivastava
 Jitendra Singh
 Aman Yadav
-Aditya Seengar
+Aditya Sengar
 Animesh Shukla
 
 All rights reserved.
