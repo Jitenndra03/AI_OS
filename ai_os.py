@@ -12,7 +12,9 @@ SETUP:
 
 Get FREE Groq API key: https://console.groq.com/keys
 """
-
+''' apni env file bna lena aur https://console.groq.com/keys yha se api laana paste krna bss 
+GROQ_API_KEY= api_key
+'''
 
 import os
 import subprocess
