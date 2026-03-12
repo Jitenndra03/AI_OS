@@ -1,0 +1,6 @@
+openai-whisper
+nltk
+psutil
+python-dotenv
+pyaudio
+numpy
