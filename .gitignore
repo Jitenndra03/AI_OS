@@ -1,10 +1,1 @@
 .env
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-logs/
-history.json
-*.egg-info/
-.venv/
-venv/
