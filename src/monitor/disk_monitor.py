@@ -1,10 +1,12 @@
 import psutil
 
-def get_disk_usage():
-    disk = psutil.disk_usage('/')
 
+def get_disk_usage(path="/"):
+    """Return disk usage stats for the given mount point."""
+    disk = psutil.disk_usage(path)
     return {
         "total": disk.total,
         "used": disk.used,
-        "percent": disk.percent
+        "free": disk.free,
+        "percent": disk.percent,
     }
