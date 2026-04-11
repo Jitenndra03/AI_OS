@@ -1,48 +1,66 @@
-import os
+"""settings.py — Central configuration for the AI OS project.
 
-# ── Runtime ────────────────────────────────────────────────
-# How often (seconds) to collect a system snapshot
-REFRESH_INTERVAL = 5
+All tunable constants live here. No other module should hardcode
+intervals, paths, thresholds, or process-safety lists.
+"""
 
-# Top-N processes to capture per snapshot (by CPU usage)
-TOP_PROCESS_LIMIT = 10
+from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────
-_BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# ── Project Paths ────────────────────────────────────────────────────────────
 
-# CSV file that receives every snapshot row
-DATA_LOG_PATH = os.path.join(_BASE, "data", "metrics.csv")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # AI_OS/
+DATA_DIR = PROJECT_ROOT / "data"
+LOG_DIR = PROJECT_ROOT / "logs"
+MODEL_DIR = PROJECT_ROOT / "models"
 
-# Human-readable runtime log
-LOG_PATH = os.path.join(_BASE, "logs", "ai_os.log")
+METRICS_CSV = DATA_DIR / "metrics.csv"
+MODEL_PATH = DATA_DIR / "model.pkl"
+ANOMALY_SCORES_CSV = DATA_DIR / "anomaly_scores.csv"
+MAIN_LOG = LOG_DIR / "ai_os.log"
+ANOMALY_LOG = LOG_DIR / "anomalies.log"
+ACTIONS_LOG = LOG_DIR / "actions.log"
 
-# Persisted IsolationForest model
-MODEL_SAVE_PATH = os.path.join(_BASE, "models", "anomaly_model.joblib")
+# ── Monitor Settings ─────────────────────────────────────────────────────────
 
-# ── AI / Training ──────────────────────────────────────────
-# Minimum rows in CSV before the model is trained for the first time.
-# At REFRESH_INTERVAL=5 s this is ~2.5 minutes of data.
-MIN_TRAINING_SAMPLES = 30
+REFRESH_INTERVAL = 5          # seconds between collection cycles
+TOP_PROCESS_LIMIT = 10        # number of top-CPU processes to capture per snapshot
+MAX_METRICS_ROWS = 10000      # keep only the last N rows in the CSV (circular buffer)
 
-# Retrain every N snapshots after the initial training.
-# Keeps the model current as system behaviour drifts.
-RETRAIN_EVERY_N = 50
+# ── AI / Training Settings ───────────────────────────────────────────────────
 
-# Expected proportion of anomalous samples in training data.
-# 0.05 means "I expect ~5% of my baseline to be unusual."
-ANOMALY_CONTAMINATION = 0.05
+FEATURE_COLUMNS = ["cpu_percent", "memory_percent", "num_threads"]
+MIN_TRAINING_SAMPLES = 500    # CSV rows needed before the first model training
+RETRAIN_EVERY_N = 1000        # retrain the model after every N new samples
+ANOMALY_CONTAMINATION = 0.05  # expected fraction of anomalies (0.0–0.5)
+N_ESTIMATORS = 100            # number of trees in the IsolationForest
+RANDOM_STATE = 42             # reproducible model training
 
-# ── Controller ─────────────────────────────────────────────
-# nice value assigned to anomalous processes (10 = lower priority, non-destructive)
-RENICE_VALUE = 10
+# ── Controller Settings ──────────────────────────────────────────────────────
 
-# Processes that should NEVER be acted upon (reniced/killed)
-# Includes UI shells, system services, and development tools.
-PROCESS_WHITELIST = ["gnome-shell", "Xorg", "Xwayland", "systemd", "code", "cursor", "python3"]
+RENICE_VALUE = 10             # nice increment applied to flagged processes
+ACTION_COOLDOWN_SEC = 300     # seconds before the same PID can be reniced again
 
-# Minimum seconds between actions on the SAME process.
-# Prevents the "thrashing" effect where a process is reniced every cycle.
-ACTION_COOLDOWN_SEC = 300  # 5 minutes
+PROCESS_WHITELIST = [
+    "systemd", "init",
+    "Xorg", "Xwayland",
+    "gnome-shell", "gnome-session",
+    "kworker", "ksoftirqd", "rcu_sched",
+    "pulseaudio", "pipewire",
+    "NetworkManager", "wpa_supplicant",
+    "dbus-daemon", "polkitd",
+    "code", "code-oss",          # VS Code
+    "python", "python3",         # don't renice ourselves
+    "sshd", "login", "gdm",
+]
 
-# Dedicated log for detailed anomaly audit trails
-ANOMALY_LOG_PATH = os.path.join(_BASE, "logs", "anomalies.log")
+# ── CSV Schema ───────────────────────────────────────────────────────────────
+
+CSV_COLUMNS = [
+    "timestamp",
+    "pid",
+    "name",
+    "cpu_percent",
+    "memory_percent",
+    "num_threads",
+    "status",
+]

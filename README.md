@@ -1,303 +1,138 @@
-# AI Layer on Kernel
+# AI Layer on Linux Kernel
 
-## Overview
+> **An intelligent user-space system monitoring and anomaly detection layer for Linux.**
 
-**AI Layer on Kernel** is a research-driven project that aims to build an intelligent software layer between the operating system and the Linux kernel.
-The goal is to create a system capable of **monitoring system behavior, making intelligent decisions, and automatically optimizing system performance**.
-
-Instead of modifying the Linux kernel directly, this project introduces an **intermediate AI-powered management layer** that observes system metrics, analyzes system behavior, and performs automated actions.
-
-The system will evolve from a basic monitoring tool to an **AI-driven system management agent** capable of self-optimization and predictive system control.
+This project sits between the Linux kernel and user applications, using machine learning to learn normal system behaviour and automatically detect — and respond to — anomalies in real time.
 
 ---
 
-## Motivation
-
-Modern operating systems generate a large amount of runtime data such as:
-
-* CPU usage
-* Memory consumption
-* Disk I/O
-* Network activity
-* Process scheduling
-* System calls
-
-However, most systems rely on **manual monitoring tools** to interpret this information.
-
-The objective of this project is to build an intelligent layer that can:
-
-* Monitor system resources
-* Detect abnormal system behavior
-* Automatically optimize system performance
-* Provide natural language interaction for system management
-
-This makes the system behave more like an **AI-assisted operating environment** rather than a passive OS.
-
----
-
-## Project Vision
-
-The long-term vision of the project is to build a system capable of:
-
-* Intelligent system monitoring
-* Automated system optimization
-* Predictive performance management
-* Natural language system control
-* Security anomaly detection
-
-The project can be seen as an **AI-powered system administrator for your computer**.
-
----
-
-## High-Level Architecture
+## Architecture
 
 ```
-+--------------------------+
-|        User / CLI        |
-|  Natural Language Input  |
-+-----------+--------------+
-            |
-            v
-+--------------------------+
-|        AI Layer          |
-| Decision Engine / LLM    |
-+-----------+--------------+
-            |
-            v
-+--------------------------+
-|   System Control Layer   |
-| cgroups / priorities     |
-| service management       |
-+-----------+--------------+
-            |
-            v
-+--------------------------+
-|   Monitoring Layer       |
-| psutil / system metrics  |
-| eBPF kernel telemetry    |
-+-----------+--------------+
-            |
-            v
-+--------------------------+
-|      Linux Kernel        |
-+--------------------------+
+┌─────────────────────────────────────────────────┐
+│                   main.py                        │
+│         (orchestrates the full pipeline)         │
+└────┬──────────────┬──────────────┬──────────────┘
+     │              │              │
+     ▼              ▼              ▼
+┌─────────┐  ┌───────────┐  ┌────────────┐
+│ monitor │  │    ai/    │  │ controller │
+│ (psutil)│  │ IsoForest │  │  (renice)  │
+└─────────┘  └───────────┘  └────────────┘
+```
+
+### Pipeline (runs every `REFRESH_INTERVAL` seconds)
+
+```
+1. Collect  →  monitor.snapshot.collect_system_snapshot()
+2. Log      →  ai.data_logger.log_snapshot()           [CSV append]
+3. Train    →  ai.trainer.train_model()                [after MIN_TRAINING_SAMPLES rows]
+4. Predict  →  ai.detector.predict()                   [IsolationForest inference]
+5. Act      →  controller.action_dispatcher.dispatch() [renice + audit log]
 ```
 
 ---
 
-## Key Components
-
-### 1. System Monitoring
-
-The system collects metrics such as:
-
-* CPU utilization
-* RAM usage
-* disk usage
-* running processes
-* system uptime
-* network activity
-
-These metrics form the **data foundation for intelligent decisions**.
-
----
-
-### 2. Decision Engine
-
-A rule-based or AI-driven engine analyzes system metrics and decides when to take action.
-
-Example logic:
+## Project Structure
 
 ```
-if CPU usage > 80%:
-    reduce priority of background processes
-```
-
-This component will later evolve into an **AI-powered decision system**.
-
----
-
-### 3. System Control Layer
-
-The control layer interacts with the operating system to optimize system performance.
-
-Possible actions include:
-
-* adjusting process priority
-* limiting CPU usage using cgroups
-* restarting failing services
-* freeing memory caches
-* managing background tasks
-
----
-
-### 4. AI Interface
-
-The system will eventually support natural language commands such as:
-
-```
-optimize my system
-check memory usage
-kill high CPU processes
-```
-
-An LLM will interpret user intent and trigger system actions.
-
----
-
-### 5. Kernel Observability
-
-Advanced versions of the project will use **eBPF-based monitoring** to capture:
-
-* system calls
-* network packets
-* kernel-level events
-* process behavior
-
-This allows deep system insights without modifying the kernel.
-
----
-
-## Project Roadmap
-
-### Step 1 — System Monitoring
-
-Build a program that monitors:
-
-* CPU usage
-* RAM usage
-* disk usage
-* top processes
-
-Goal: Understand system behavior.
-
----
-
-### Step 2 — Decision Engine
-
-Implement rule-based optimization logic.
-
-Example:
-
-```
-if cpu > 80%:
-    renice background processes
-```
-
-Goal: Enable automatic system optimization.
-
----
-
-### Step 3 — System Control
-
-Add direct system control capabilities:
-
-* process priority management
-* cgroup resource limits
-* service management
-
-Goal: Allow the AI layer to affect system behavior.
-
----
-
-### Step 4 — AI Integration
-
-Introduce an AI interface capable of interpreting user commands and system states.
-
-Goal: Natural language system management.
-
----
-
-### Step 5 — Kernel-Level Monitoring
-
-Integrate eBPF tools to observe kernel events and advanced system metrics.
-
-Goal: Deep system observability.
-
----
-
-## Technologies Used
-
-Core Technologies:
-
-* Python
-* system monitoring libraries
-* Linux system APIs
-
-Monitoring Tools:
-
-* system metrics collection
-* process inspection
-* disk usage tracking
-
-Future Technologies:
-
-* eBPF monitoring
-* AI decision engines
-* natural language interfaces
-
----
-
-## Repository Structure
-
-```
-ai-layer-kernel
-│
-├── docs
-│   └── architecture.md
-│
-├── src
-│   ├── monitor
-│   ├── utils
-│   ├── config
-│   └── main.py
-│
-├── tests
-│
-├── requirements.txt
-└── README.md
+AI_OS/
+├── data/
+│   └── metrics.csv          ← system metric rows (auto-created)
+├── logs/
+│   └── ai_os.log            ← structured runtime log
+├── models/
+│   └── anomaly_model.joblib ← persisted IsolationForest (auto-created after warm-up)
+├── src/
+│   ├── main.py              ← entry point
+│   ├── config/
+│   │   └── settings.py      ← all tunable constants
+│   ├── monitor/             ← psutil-based metric collectors
+│   │   ├── cpu_monitor.py
+│   │   ├── memory_monitor.py
+│   │   ├── disk_monitor.py
+│   │   ├── process_monitor.py
+│   │   └── snapshot.py      ← combines all monitors into one flat dict
+│   ├── ai/
+│   │   ├── data_logger.py   ← CSV row appender
+│   │   ├── trainer.py       ← IsolationForest train / save / load
+│   │   └── detector.py      ← feature extraction + inference
+│   ├── controller/
+│   │   ├── process_actions.py   ← renice, log suspicious processes
+│   │   └── action_dispatcher.py ← AI signal → OS action bridge
+│   └── utils/
+│       ├── formatter.py     ← unit converters + CSV column schema
+│       └── logger.py        ← shared Python logging setup
+└── tests/
+    ├── conftest.py
+    ├── test_monitor.py
+    ├── test_ai_detector.py
+    ├── test_data_logger.py
+    └── test_system_flow.py
 ```
 
 ---
 
-## Learning Objectives
+## Installation
 
-This project helps explore concepts such as:
-
-* operating system internals
-* system monitoring
-* Linux process management
-* automation of system administration
-* AI-assisted system control
+```bash
+git clone <your-repo-url>
+cd AI_OS
+pip install -r requirements.txt
+```
 
 ---
 
-## Future Possibilities
+## Running
 
-Potential applications of this system include:
+```bash
+cd src
+python main.py
+```
 
-* intelligent system administration
-* autonomous server management
-* AI-assisted DevOps tools
-* self-healing operating systems
-* smart resource allocation systems
+**Warm-up phase** (first ~2.5 minutes at default settings):
+```
+[✓  Normal ] CPU= 18.2%  MEM= 52.1%  DISK= 43.0%  rows=   12  (warm-up 12/30)
+```
+
+**After training** (model predicts on every snapshot):
+```
+[✓  Normal ] CPU= 20.1%  MEM= 53.0%  DISK= 43.0%  rows=   35
+[⚠  ANOMALY] CPU= 94.7%  MEM= 88.2%  DISK= 43.0%  rows=   36
+```
+
+Anomaly events produce structured entries in `logs/ai_os.log` and renice the top CPU process.
 
 ---
 
-## Disclaimer
+## Configuration
 
-This project is primarily intended for **educational and research purposes**.
-It aims to explore the intersection of **operating systems, system monitoring, and artificial intelligence**.
+Edit `src/config/settings.py`:
+
+| Setting | Default | Description |
+|---|---|---|
+| `REFRESH_INTERVAL` | `5` | Seconds between snapshots |
+| `TOP_PROCESS_LIMIT` | `10` | Top N processes tracked |
+| `MIN_TRAINING_SAMPLES` | `30` | Rows needed before first training |
+| `RETRAIN_EVERY_N` | `50` | Retrain after every N cycles |
+| `ANOMALY_CONTAMINATION` | `0.05` | Expected anomaly fraction (0–0.5) |
+| `RENICE_VALUE` | `10` | nice value applied to flagged processes |
 
 ---
 
-## Author
+## Testing
 
-Aditya Srivastava
-Jitendra Singh
-Aman Yadav
-Aditya Seengar
-Animesh Shukla
+```bash
+pip install -r requirements.txt
+PYTHONPATH=src pytest tests/ -v
+```
 
-All rights reserved.
+---
 
+## Key Design Decisions
+
+- **No rule-based logic** — all decisions are made by IsolationForest, not hardcoded thresholds  
+- **Warm-up period** — the model learns *your* machine's normal baseline before making predictions  
+- **Periodic retraining** — the model adapts as your system usage patterns change over time  
+- **Safe actions only** — the controller only renices (lowers scheduling priority), never kills processes  
+- **Persistent model** — the trained model is saved to disk and reloaded on restart, so warm-up is skipped after the first run

@@ -1,48 +1,40 @@
-"""Centralized logging configuration for the AI OS project.
+"""logger.py — Centralized logging utility for AI OS.
 
-Usage in any module:
-    from utils.logger import get_logger
-    logger = get_logger(__name__)
+Ensures consistent log formatting across all threads and modules.
 """
 
 import logging
-import os
+import sys
+from pathlib import Path
+from config import settings
 
-
-def get_logger(name: str = "ai_os") -> logging.Logger:
-    """Return a logger that writes to both the log file and stdout.
-
-    Calling this multiple times with the same name is safe — Python's
-    logging framework deduplicates handlers automatically.
-    """
+def setup_logger(name: str, log_file: Path | None = None, level=logging.INFO) -> logging.Logger:
+    """Set up a logger with a file handler and a stream handler."""
     logger = logging.getLogger(name)
+    logger.setLevel(level)
 
-    # Only configure handlers once per logger instance
+    # Avoid duplicate handlers
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.DEBUG)
-
-    fmt = logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    formatter = logging.Formatter(
+        "%(asctime)s | %(name)-15s | %(levelname)-7s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # ── File handler ──────────────────────────────────────────
-    # Import here to avoid circular dependency at module load time
-    from config import settings  # noqa: PLC0415
-
-    os.makedirs(os.path.dirname(settings.LOG_PATH), exist_ok=True)
-    fh = logging.FileHandler(settings.LOG_PATH)
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(fmt)
-
-    # ── Console handler ───────────────────────────────────────
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    ch.setFormatter(fmt)
-
-    logger.addHandler(fh)
+    # Console handler
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(formatter)
     logger.addHandler(ch)
 
+    # File handler (if path provided)
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(log_file)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
     return logger
+
+# Common loggers
+system_logger = setup_logger("AI_OS", settings.MAIN_LOG)
