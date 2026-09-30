@@ -6,7 +6,7 @@ Ensures consistent log formatting across all threads and modules.
 import logging
 import sys
 from pathlib import Path
-from config import settings
+from src.config import settings
 
 def setup_logger(name: str, log_file: Path | None = None, level=logging.INFO) -> logging.Logger:
     """Set up a logger with a file handler and a stream handler."""

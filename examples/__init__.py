@@ -1,0 +1,1 @@
+"""Harmless packaged demonstration fixtures."""

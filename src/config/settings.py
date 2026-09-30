@@ -37,7 +37,7 @@ RANDOM_STATE = 42             # reproducible model training
 
 # ── Controller Settings ──────────────────────────────────────────────────────
 
-RENICE_VALUE = 10             # nice increment applied to flagged processes
+RENICE_VALUE = 10             # absolute nice target (legacy analysis settings)
 ACTION_COOLDOWN_SEC = 300     # seconds before the same PID can be reniced again
 
 PROCESS_WHITELIST = [
@@ -64,3 +64,20 @@ CSV_COLUMNS = [
     "num_threads",
     "status",
 ]
+
+# NLI operation permissions are defined and revalidated in nli/safety_validator.py.
+
+# Workload optimizer: observation-only unless --apply is explicitly supplied.
+# No process is eligible without an explicit executable policy rule.
+OPTIMIZATION_STATE_PATH = DATA_DIR / "runtime" / "optimizer-state.json"
+OPTIMIZATION_MAX_SNAPSHOT_AGE = 15.0
+WORKLOAD_SUSTAIN_SECONDS = 15.0
+WORKLOAD_RELEASE_SECONDS = 20.0
+
+# ── ML-Assisted Workload Recognition ─────────────────────────────────────────
+
+ML_MODEL_PATH = DATA_DIR / "ml" / "workload_model.json"
+ML_TRAINING_DATA_PATH = DATA_DIR / "ml" / "training_data.csv"
+ML_MIN_TRAINING_SAMPLES = 100          # minimum samples before first training
+ML_RETRAIN_INTERVAL_SECONDS = 300      # seconds between retrain checks
+ML_RETRAIN_MIN_NEW_SAMPLES = 50        # new samples needed to trigger retrain

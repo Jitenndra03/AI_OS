@@ -9,3 +9,9 @@ AI Kernel Integration For Linux.pdf
 TECHNICAL_REPORT.md
 
 data/
+
+artifacts/
+*.egg-info/
+build/
+dist/
+.pytest_cache/

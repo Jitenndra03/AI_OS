@@ -7,11 +7,12 @@ Ensures data names are sanitized to prevent CSV injection.
 import csv
 import os
 import time
+import tempfile
 from pathlib import Path
 
-from config import settings
-from utils.concurrency import metrics_lock
-from utils.logger import system_logger
+from src.config import settings
+from src.utils.concurrency import metrics_lock
+from src.utils.logger import system_logger
 
 
 def sanitize_value(val: any) -> str:
@@ -80,18 +81,24 @@ def _enforce_retention(path: Path):
             return
 
         # Simple but effective for small/medium CSVs: Read all, slice, rewrite
-        with open(path, "r") as fh:
-            lines = fh.readlines()
-
-        header = lines[0]
-        data = lines[1:]
-        
-        # Slice to keep only the most recent rows
-        truncated_data = data[-settings.MAX_METRICS_ROWS:]
-        
-        with open(path, "w", newline="") as fh:
-            fh.write(header)
-            fh.writelines(truncated_data)
+        with open(path, "r", newline="") as fh:
+            records = list(csv.reader(fh))
+        # Names can legally contain newlines: retain CSV records, not lines.
+        header, data = records[0], records[1:]
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", newline="", dir=path.parent,
+                                             prefix=".metrics-", delete=False) as fh:
+                temporary = Path(fh.name)
+                writer = csv.writer(fh)
+                writer.writerow(header)
+                writer.writerows(data[-settings.MAX_METRICS_ROWS:])
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
             
         system_logger.debug(f"Truncated {path.name} to {settings.MAX_METRICS_ROWS} rows.")
     except Exception as e:
@@ -106,8 +113,8 @@ def row_count(path: str | Path | None = None, use_lock: bool = True) -> int:
         return 0
 
     def _count():
-        with open(path) as fh:
-            return max(0, sum(1 for _ in fh) - 1)
+        with open(path, newline="") as fh:
+            return max(0, sum(1 for _ in csv.reader(fh)) - 1)
 
     if use_lock:
         with metrics_lock:
@@ -116,7 +123,7 @@ def row_count(path: str | Path | None = None, use_lock: bool = True) -> int:
 
 
 if __name__ == "__main__":
-    from monitor.metrics_collector import collect_process_metrics
+    from src.monitor.metrics_collector import collect_process_metrics
     print(f"Testing data retention (Limit: {settings.MAX_METRICS_ROWS})...")
     csv_path = init_csv()
     snapshot = collect_process_metrics()

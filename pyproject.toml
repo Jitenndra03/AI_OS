@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-os-demo"
+version = "0.1.0"
+description = "Workload-aware Linux optimization, constrained CLI assistance, and artifact isolation"
+requires-python = ">=3.11"
+dependencies = [
+  "psutil==7.2.2", "scikit-learn==1.8.0", "joblib==1.5.3",
+  "numpy==2.4.4", "pandas==3.0.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.1.1"]
+online = ["google-genai>=1,<2"]
+
+[project.scripts]
+ai-os = "main:main"
+ai-os-cli = "nli.cli_interface:main"
+ai-os-sandbox = "sandbox.cli:main"
+ai-os-demo = "demo:main"
+ai-os-doctor = "doctor:main"
+
+[tool.setuptools]
+py-modules = ["main", "demo", "doctor", "benchmark"]
+
+[tool.setuptools.packages.find]
+include = ["src*", "nli*", "sandbox*", "scripts*", "examples*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires a working Linux isolation primitive"]

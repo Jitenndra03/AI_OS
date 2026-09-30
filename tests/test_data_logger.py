@@ -1,99 +1,64 @@
-"""test_data_logger.py — Unit tests for the CSV data logging module."""
-
+"""Current per-process CSV schema, formula escaping, and retention."""
 import csv
-import os
-
 import pytest
+from src.config import settings
+from src.monitor.data_logger import init_csv, log_rows, row_count, sanitize_value
 
-from ai.data_logger import init_csv, log_snapshot, row_count
-from utils.formatter import CSV_COLUMNS
+def rows(path):
+    with path.open(newline="") as stream:
+        return list(csv.DictReader(stream))
 
+def test_init_creates_nested_schema_and_preserves_existing_rows(tmp_path):
+    path = tmp_path / "nested" / "metrics.csv"
+    assert init_csv(path) == path
+    assert path.read_text().strip().split(",") == settings.CSV_COLUMNS
+    assert row_count(path) == 0
+    assert log_rows([{"pid": 11, "name": "worker", "cpu_percent": 42}], path) == 1
+    init_csv(path)
+    assert row_count(path) == 1
+    assert rows(path)[0]["cpu_percent"] == "42"
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+def test_missing_and_empty_file_initialization(tmp_path):
+    path = tmp_path / "empty.csv"
+    assert row_count(path) == 0
+    path.touch()
+    init_csv(path)
+    assert row_count(path) == 0
+    assert rows(path) == []
 
-@pytest.fixture
-def tmp_csv(tmp_path):
-    """Return a path inside a pytest-managed temp directory."""
-    return str(tmp_path / "test_metrics.csv")
+def test_empty_batch_and_missing_metrics_have_predictable_defaults(tmp_path):
+    path = tmp_path / "metrics.csv"
+    assert log_rows([], path) == 0
+    assert log_rows([{}], path) == 1
+    record = rows(path)[0]
+    assert record["name"] == "unknown"
+    assert float(record["cpu_percent"]) == 0
+    assert int(record["num_threads"]) == 0
 
+@pytest.mark.parametrize("name", ["=SUM(A1:A2)", "+command", "-name", "@formula"])
+def test_process_names_escape_spreadsheet_formulas(tmp_path, name):
+    path = tmp_path / "metrics.csv"
+    log_rows([{"name": name}], path)
+    assert rows(path)[0]["name"] == "'" + name
+    assert sanitize_value(name) == "'" + name
 
-@pytest.fixture
-def sample_snapshot():
-    return {
-        "timestamp": 1_700_000_000.0,
-        "cpu_percent": 30.0,
-        "load_1m": 0.5,
-        "load_5m": 0.4,
-        "load_15m": 0.3,
-        "memory_percent": 60.0,
-        "memory_used": 6 * 1024 ** 3,
-        "memory_available": 2 * 1024 ** 3,
-        "swap_percent": 5.0,
-        "disk_percent": 70.0,
-        "disk_used": 300 * 1024 ** 3,
-        "disk_free": 100 * 1024 ** 3,
-        "top_processes": [],
-    }
-
-
-
-# ── init_csv ──────────────────────────────────────────────────────────────────
-
-def test_init_csv_creates_file(tmp_csv):
-    init_csv(tmp_csv)
-    assert os.path.exists(tmp_csv)
-
-
-def test_init_csv_writes_correct_header(tmp_csv):
-    init_csv(tmp_csv)
-    with open(tmp_csv) as f:
-        reader = csv.reader(f)
-        header = next(reader)
-    assert header == CSV_COLUMNS
-
-
-def test_init_csv_does_not_overwrite_existing_file(tmp_csv, sample_snapshot):
-    """Calling init_csv twice must not erase existing data rows."""
-    init_csv(tmp_csv)
-    log_snapshot(tmp_csv, sample_snapshot)
-    init_csv(tmp_csv)  # second call — should be a no-op
-    assert row_count(tmp_csv) == 1
+def test_retention_preserves_header_and_newest_process_rows(tmp_path, monkeypatch):
+    path = tmp_path / "metrics.csv"
+    monkeypatch.setattr(settings, "MAX_METRICS_ROWS", 3)
+    log_rows([{"pid": i, "name": f"worker{i}"} for i in range(5)], path)
+    assert row_count(path) == 3
+    assert [int(row["pid"]) for row in rows(path)] == [2, 3, 4]
+    assert set(rows(path)[0]) == set(settings.CSV_COLUMNS)
+    log_rows([{"pid": 5}], path)
+    assert [int(row["pid"]) for row in rows(path)] == [3, 4, 5]
 
 
-# ── log_snapshot ──────────────────────────────────────────────────────────────
-
-def test_log_snapshot_appends_row(tmp_csv, sample_snapshot):
-    init_csv(tmp_csv)
-    log_snapshot(tmp_csv, sample_snapshot)
-    assert row_count(tmp_csv) == 1
-
-
-def test_log_snapshot_multiple_rows(tmp_csv, sample_snapshot):
-    init_csv(tmp_csv)
-    for _ in range(5):
-        log_snapshot(tmp_csv, sample_snapshot)
-    assert row_count(tmp_csv) == 5
-
-
-def test_log_snapshot_correct_column_count(tmp_csv, sample_snapshot):
-    init_csv(tmp_csv)
-    log_snapshot(tmp_csv, sample_snapshot)
-    with open(tmp_csv) as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header
-        row = next(reader)
-    assert len(row) == len(CSV_COLUMNS)
-
-
-# ── row_count ─────────────────────────────────────────────────────────────────
-
-def test_row_count_returns_zero_for_missing_file(tmp_path):
-    missing = str(tmp_path / "nonexistent.csv")
-    assert row_count(missing) == 0
-
-
-def test_row_count_excludes_header(tmp_csv, sample_snapshot):
-    init_csv(tmp_csv)
-    assert row_count(tmp_csv) == 0  # header only
-    log_snapshot(tmp_csv, sample_snapshot)
-    assert row_count(tmp_csv) == 1
+def test_retention_counts_csv_records_when_process_names_contain_newlines(tmp_path, monkeypatch):
+    path = tmp_path / "multiline.csv"
+    monkeypatch.setattr(settings, "MAX_METRICS_ROWS", 2)
+    log_rows([{"pid": 1, "name": "first\nworker"}], path)
+    assert row_count(path) == 1
+    log_rows([{"pid": 2, "name": "second\nworker"}, {"pid": 3, "name": "last\nworker"}], path)
+    assert row_count(path) == 2
+    assert [(int(row["pid"]), row["name"]) for row in rows(path)] == [
+        (2, "second\nworker"), (3, "last\nworker")]

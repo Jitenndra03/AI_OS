@@ -1,0 +1,26 @@
+# System service template. Review and replace every REPLACE_* token before use.
+# Not installed or enabled automatically. Defaults to observation only.
+[Unit]
+Description=AI_OS workload-aware process optimizer
+After=multi-user.target
+
+[Service]
+Type=simple
+User=REPLACE_USER
+WorkingDirectory=REPLACE_PROJECT_PATH
+ExecStart=REPLACE_PROJECT_PATH/.venv/bin/python REPLACE_PROJECT_PATH/main.py --state-file /var/lib/ai-os/optimizer-state.json
+# For explicitly enabled live operation, append --policy ABSOLUTE_POLICY_PATH --apply.
+# For renice restoration, grant only this service CAP_SYS_NICE if needed:
+# AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+NoNewPrivileges=true
+StateDirectory=ai-os
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+# Let the independent watchdog recover if the main process is terminated.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

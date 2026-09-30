@@ -1,0 +1,10 @@
+{
+  "background_processes": [
+    {
+      "executable": "/absolute/path/to/your/optional-background-worker",
+      "category": "BACKGROUND_SAFE",
+      "strategy": "RENICE",
+      "nice": 10
+    }
+  ]
+}

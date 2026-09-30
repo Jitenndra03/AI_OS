@@ -12,9 +12,9 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
-from config import settings
-from utils.concurrency import metrics_lock, model_lock
-from utils.logger import system_logger
+from src.config import settings
+from src.utils.concurrency import metrics_lock, model_lock
+from src.utils.logger import system_logger
 
 
 class InsufficientDataError(Exception):
