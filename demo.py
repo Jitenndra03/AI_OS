@@ -115,7 +115,13 @@ def main(argv=None):
         components['cli'] = run_command(['-m', 'nli.cli_interface', '--offline', '--yes', '-c', 'show memory usage'])
         if components['cli']['exit_code']:
             raise RuntimeError('Approved read-only CLI action failed')
-        print('PASS assistant: offline intent -> preview -> explicit approval -> dedicated PTY')
+        components['package_preview'] = run_command(['-m', 'nli.cli_interface', '--dry-run', '-c', 'install package git'])
+        script_dir = Path(tempfile.mkdtemp(prefix='authored-script-', dir=args.output_dir.resolve()))
+        components['script_authoring'] = run_command(['-m', 'nli.cli_interface', '--offline', '--yes',
+            '--workspace', script_dir, '--write-script', 'report storage usage', '--output-script', 'storage.sh'])
+        if components['package_preview']['exit_code'] or components['script_authoring']['exit_code']:
+            raise RuntimeError('Package preview or script authoring failed')
+        print('PASS assistant: approved PTY check, package plan preview, Bash authoring (no package changes or script execution)')
         from sandbox.core import doctor, inspect_artifact, run_artifact
         sample = ROOT / 'examples/sandbox/isolation_demo.py'
         components['sandbox_inspection'] = inspect_artifact(sample)

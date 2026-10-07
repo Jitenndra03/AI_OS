@@ -1,84 +1,135 @@
 # Natural-language CLI
 
-The CLI works offline without credentials. It proposes a finite read-only
-operation, displays its exact arguments and working directory, and asks for
-explicit approval before starting a separate PTY-backed process session.
-An empty response or EOF declines execution.
-
-From the repository root with the project environment installed:
+AI_OS supports offline system checks, filename searches, Debian/Ubuntu package
+management, and Bash script authoring. Each operation shows what it will do before
+approval. Run the assistant as your ordinary user, not through sudo.
 
 ```bash
-.venv/bin/python -m nli.cli_interface --offline -c 'show memory usage'
-.venv/bin/python -m nli.cli_interface --offline
+source .venv/bin/activate
+python -m nli.cli_interface --offline
 ```
 
-For an explicitly authorized noninteractive demo, approve a single request with
-`--yes`. This option requires `-c`; it cannot enable blanket approval in the REPL.
+You can also use the installed `ai-os-cli` command. Enter or EOF at an approval
+prompt cancels. `--dry-run` previews a request without executing it or saving files.
+
+## Find files and check storage
 
 ```bash
-.venv/bin/python -m nli.cli_interface --offline --yes -c 'system summary'
-.venv/bin/python -m nli.cli_interface --offline --yes --workspace . -c 'find files'
+python -m nli.cli_interface -c 'check storage'
+python -m nli.cli_interface --workspace ~/Documents -c 'find files named "*.pdf"'
+python -m nli.cli_interface --workspace . -c 'find report.txt'
+python -m nli.cli_interface -c 'show memory usage'
 ```
 
-| Request | Behavior |
-| --- | --- |
-| `show CPU usage` | Sample CPU usage over a short interval |
-| `show memory usage` | Physical memory and swap summary |
-| `show disk usage` | Disk space for the approved working directory |
-| `show top processes` | Ten processes ordered by sampled CPU usage |
-| `system summary` | Uptime, CPU, memory, and disk summary |
-| `current directory` | Print the approved working directory |
-| `list files` | List up to 1,000 entries in that directory |
-| `find files` | Find up to 1,000 regular files, at most four directory levels deep |
+Other supported requests include CPU usage, top processes, system summary,
+current directory, list files and find files. Searches match filenames (including
+globs), inspect at most four directory levels, return at most 1,000 regular files,
+and skip symlinks. They do not read file contents. `--workspace` sets the search
+root; this application policy is not kernel filesystem isolation.
 
-File listing/search does not open file contents. Search skips symlinks and does
-not intentionally traverse outside the approved directory. `--workspace PATH`
-selects that directory (default: the invocation directory). This is a read-only
-application policy, not kernel filesystem isolation; concurrent filesystem
-changes are not a sandbox boundary.
+## Install or uninstall applications
 
-The CLI does not accept arbitrary Bash, pipes, substitutions, redirects, root
-operations, writes, deletion, service changes, or process priority changes.
-Unknown or compound requests explain the supported scope and execute nothing.
-It is intentionally a limited, reviewable demo rather than a general shell
-safety checker.
+Use exact package names available from the VM's configured APT repositories.
+Application display names are not automatically mapped to repository packages.
+URLs, downloaded `.deb` files, arbitrary APT options and repository configuration
+changes are unsupported.
 
-Every proposal is immutable. The execution entry point independently checks its
-schema and canonical operation arguments, then verifies approval against a
-SHA-256 digest of every proposal field, including the working directory.
-Changing a field invalidates that approval. The digest binds consent to content;
-it is not authentication against trusted Python code in the same process.
+```bash
+# Preview only; works without a password and makes no changes.
+python -m nli.cli_interface --dry-run -c 'install apps git and curl'
 
-The child uses a dedicated session and PTY with merged output. Ctrl-C,
-`--timeout SECONDS` (default 30, maximum 300), and output overflow terminate its
-entire process group and reap the direct child. `--max-output BYTES` defaults to
-65,536 bytes (maximum 1 MiB). Truncated output is marked, and the child exit
-status is reported. Exit code 0 means success; 1 means declined or failed
-execution; 2 means an unsupported request or invalid CLI arguments.
-
-Optional online classification is explicitly enabled with `--online`. Install
-`google-genai` separately and set `GEMINI_API_KEY` and `GEMINI_MODEL` in the
-process environment. The CLI never loads `.env` files. Known offline requests
-remain local; unfamiliar requests may be sent to Gemini for classification.
-Online responses can only select from the same operations; generated shell
-code is never accepted. Missing SDK/configuration or provider errors produce a
-safe unsupported-request result. Provider exception details and credentials are
-not logged.
-
-The Python API uses the same boundary:
-
-```python
-from nli.nli_parser import parse_user_input
-from nli.safety_validator import approval_digest
-from nli.command_executor import execute_proposal
-
-proposal = parse_user_input('show memory usage', offline=True)
-print(proposal.script, proposal.cwd)
-if input('Execute? [y/N]: ').strip().lower() == 'y':
-    result = execute_proposal(proposal, approved_digest=approval_digest(proposal))
-    print(result.output, result.exit_code)
+# Execute interactively after reviewing and approving the plan.
+python -m nli.cli_interface -c 'install package vlc'
+python -m nli.cli_interface -c 'uninstall package vlc'
+python -m nli.cli_interface -c 'sudo apt update'
 ```
 
-`execute_proposal` also accepts a `threading.Event` as `cancel_event`. Its result
-contains `success`, `output`, `exit_code`, `timed_out`, `cancelled`, and
-`truncated`; legacy `(success, output)` unpacking remains available.
+An installation runs these steps in order, using `apt-get`, APT's script-oriented
+interface:
+
+1. Refresh package indexes (`apt-get update`).
+2. Verify exact package names, show a read-only APT dependency simulation, and
+   require another explicit `yes` for the displayed changes.
+3. Install the packages and required dependencies, refusing removals and retaining
+   modified configuration files. An already-installed named package may be upgraded.
+4. Refresh package indexes again (`apt-get update`).
+
+**Every privileged APT step requires fresh password entry**, including each index
+refresh. A failed/cancelled step stops the remaining steps. Earlier successful
+steps are retained; there is no automatic rollback. If the final update fails,
+the package may already be installed and the overall operation reports failure.
+
+Uninstallation shows the removal simulation first, including dependent packages
+APT would remove. It retains configuration files and does not purge or run
+`autoremove`. APT's normal essential-package safeguards remain enabled. A
+standalone update only refreshes repository indexes; it does not upgrade packages.
+
+## Password handling and terminal behavior
+
+The package worker has its own controlling PTY. It explains the command and asks
+for a hidden password. Noninteractive execution and running AI_OS as root are
+rejected. `--yes` cannot bypass package approval or password entry.
+
+The password is sent over an anonymous pipe solely to `sudo -S -v`, after
+invalidating cached credentials. After authentication, a separate `sudo -n`
+invocation runs the exact APT command with empty stdin. The password never goes
+into command arguments, environment variables, logs, or APT/maintainer-script
+stdin. It exists briefly in process memory; Python strings cannot be reliably
+zeroized. The terminal's sudo timestamp is invalidated afterward, including on
+failure.
+
+The machine's sudoers policy decides authentication. Under `NOPASSWD`, AI_OS still
+requires nonempty password entry, but sudoers may not validate it. Enforce `PASSWD`
+in the VM's sudo policy if actual password verification is mandatory. Policies
+that forbid credential caching or restrict `sudo -v` can reject this workflow;
+AI_OS reports failure and has no fallback that skips its password gate.
+
+APT operations stream their output. To avoid forcibly killing `dpkg` mid-change,
+`--timeout` is not a package-transaction deadline and output limits only truncate
+retained output. Ctrl-C requests interruption and waits for subprocess cleanup.
+A stuck package transaction may require operator diagnosis in another terminal;
+do not power off the VM to dismiss a prompt. Normal read-only operations retain
+their timeout and process-group termination behavior.
+
+## Write Bash scripts
+
+```bash
+python -m nli.cli_interface --write-script 'report storage usage' --output-script storage.sh
+python -m nli.cli_interface --write-script 'backup directory' --output-script backup.sh
+python -m nli.cli_interface --dry-run -c 'write a bash script to find files named "*.log"'
+```
+
+Offline templates cover storage/system reports, directory backups and file
+searches. Other requested scripts can be generated with explicitly enabled online
+mode. Install the optional provider SDK with `python -m pip install -e '.[online]'`
+and configure `GEMINI_API_KEY` and `GEMINI_MODEL` in your environment, then use
+`--online --write-script 'YOUR TASK'`. Requests in online mode may be sent to Gemini;
+no live provider request is needed for the offline demonstration.
+
+The CLI previews the complete source and explanation, checks Bash syntax, and asks
+before saving. New scripts are private files inside `--workspace`, created without
+overwriting files or following symlinks. **Generation and saving never execute the
+script.** Syntax checking is not a security review; review generated code before
+running it yourself. See [script-guide.md](script-guide.md) for examples and limits.
+
+`--yes` can approve a single read-only command or script save; it cannot enable
+blanket REPL approval or privileged execution without a password.
+
+## Execution contract
+
+Normal operations and package plans use immutable typed proposals. Execution
+revalidates canonical argv, targets, working directory and all displayed fields;
+a digest binds approval to that exact content. Arbitrary shell text is not an
+executable proposal. The digest binds consent, not authentication against other
+trusted Python code in the same process.
+
+`execute_proposal(..., approved_digest=..., interactive=True)` is required for a
+package proposal and checks for a real terminal and non-root user. Its result
+includes success, output, exit status, timeout/cancellation and truncation flags.
+Interactive output is already streamed and should not be printed a second time.
+
+Read-only defaults are 30 seconds and 65,536 output bytes (configurable up to
+300 seconds and 1 MiB). CLI exit code 0 means success; 1 means decline/execution
+failure; 2 means unsupported request or invalid configuration. Optional online
+intent classification remains limited to the read-only operation vocabulary;
+package operations always use the deterministic local parser.

@@ -103,17 +103,35 @@ python -m nli.cli_interface --offline --workspace . -c 'find files'
 ```
 
 The CLI displays the exact operation, working directory, and approval digest.
-Type `yes` to run; Enter or EOF cancels. It supports finite read-only operations,
-not arbitrary Bash. Demonstrate a blocked request with:
+Type `yes` to run; Enter or EOF cancels. System checks and file searches use
+canonical read-only operations. Demonstrate a blocked request with:
 
 ```bash
 python -m nli.cli_interface --offline -c 'delete all files'
 ```
 
 That rejection exits nonzero intentionally. No API key is needed. For an
-explicitly authorized single-command recording, add `--yes` with `-c`. See
-[the CLI guide](cli-guide.md) for output bounds, cancellation, and optional
-online classification.
+explicitly authorized single read-only command, add `--yes` with `-c`.
+
+Preview the new package-management and Bash-authoring features without changing
+the VM's packages or executing generated code:
+
+```bash
+python -m nli.cli_interface --workspace . -c 'find files named "*.py"'
+python -m nli.cli_interface -c 'check storage'
+python -m nli.cli_interface --dry-run -c 'install package tree'
+python -m nli.cli_interface --dry-run --write-script 'report storage usage'
+```
+
+For a separate live package demonstration on the disposable VM, omit `--dry-run`
+from the install command. Review the plan, enter a hidden password for the first
+APT update, review and approve the dependency simulation, enter the password for
+installation, and enter it again for the final update. An uninstall request such
+as `uninstall package tree` also requires simulation approval and a fresh password;
+only remove packages you intentionally added for this exercise. No test suite or
+standard combined demo performs these privileged changes. `--yes` cannot skip
+these interactive gates. See [the CLI guide](cli-guide.md) for sudo policy caveats,
+orderly APT cancellation and optional online Bash generation.
 
 **Minutes 6–8: inspect, quarantine, and isolate an artifact.**
 
@@ -206,7 +224,7 @@ claim that arbitrary hostile software can be made safe.
 | Renice is blocked or restoration unavailable | Use the report as a failed/unavailable live-control check. Do not grant broad permanent capabilities merely to improve the demo result. |
 | No optimization proposals appear | Observation is the default; known workload classification alone does not authorize background changes. |
 | Benchmarks vary or managed trials are slower | Reduce competing VM/host work, retain all trial outcomes, and repeat bounded measurements. Do not replace measurements with claimed gains. |
-| CLI rejects a sentence | Use one of the supported read-only phrases in the CLI guide. Unsupported requests execute nothing. |
+| CLI rejects a sentence | Use a supported phrase or exact APT package name from the CLI guide. Unsupported requests execute nothing. |
 
 Retain the integrated demo report, verification output, synthetic training
 metrics, and raw benchmark JSON alongside presentation materials. Distinguish

@@ -1,184 +1,318 @@
 # AI_OS
 
-AI_OS is a Linux **user-space prototype** with three demonstrable components:
-workload-aware process optimization, a constrained natural-language terminal
-assistant, and isolation for inspecting and running downloaded scripts. It uses
-existing Linux interfaces; it is not a replacement kernel or a new operating system.
+AI_OS is a **Linux user-space prototype** for workload-aware process management,
+a natural-language terminal assistant, and artifact inspection with isolated
+script execution. Its original goal is to make Linux easier to use and more
+responsive while adding checks around downloaded software.
 
-| Component | Implemented demonstration | Boundary |
-|---|---|---|
-| Process optimization + ML | Live monitoring, sustained workload detection, Random Forest advisory labels, explicit policy, journaled controls and recovery | Observation by default; synthetic demo exercises control logic without changing host resources |
-| Natural-language CLI | Eight offline read-only intents, command preview, explicit approval, dedicated PTY, timeout/cancel/output limits | Arbitrary generated Bash and automatic administration are intentionally unsupported |
-| Artifact sandbox | Private quarantine, static inspection, verified bubblewrap isolation, bounded Python/shell execution and JSON reports | An isolation test is not a malware verdict or a guarantee against supply-chain attacks |
+The current implementation consists of Python programs that use existing Linux
+interfaces. It does not modify the kernel or insert a new execution layer between
+the kernel and every user-space application. The three components have separate
+commands. Downloads are not intercepted automatically, and NLI package installs
+are not routed through the sandbox.
 
-## Start in a Linux VM
+## Current implementation and evidence
 
-Use an ordinary user account on Ubuntu 24.04 or Debian 12+ with Python 3.11+.
-The complete [VM setup and demonstration guide](docs/VM_DEMO_GUIDE.md) includes a
-rehearsal script, expected results, recovery, and capability troubleshooting.
+| Area | Implemented | Validation and limits |
+| --- | --- | --- |
+| Process optimization | Live monitoring, sustained workload detection, explicit background rules, priority/cgroup/suspend controls, action journal and recovery worker | Live observation tested. The combined demo uses synthetic processes and simulated resource changes. Privileged controls have fixture-based regression coverage; live privileged operation on a target VM remains to be validated. |
+| ML workload recognition | Random Forest training, chronological holdout evaluation, JSON model persistence and advisory inference | Synthetic training/export/reload/inference tested. No independently labelled real-workload accuracy or measured optimization benefit is established. |
+| Natural-language interface (NLI) | Offline system checks, filename searches, approved PTY execution, APT install/remove plans and Bash authoring | Read-only commands, script saving and harmless PTYs tested. Package authentication/mutations use controlled substitutes in tests; no live password-entered installation/removal has been validated. |
+| Artifact sandbox | Static inspection, private quarantine, capability probe and explicit isolated execution of Python/POSIX shell scripts | Real bubblewrap isolation and bundled harmless examples tested on the development host. This is not a general malware detector or evidence of supply-chain attack prevention. |
+
+The latest recorded verification, **2026-09-30**, reports **660 tests passed with
+no failures or skips**, plus dependency, source-syntax and integrated-demo checks.
+The recorded environment was **Ubuntu 26.04.1 LTS, Linux 7.0.0-34-generic,
+Python 3.14.4**. See [the validation record](docs/VALIDATION_REPORT.md) for the
+commands, evidence and untested paths. Passing these checks does not guarantee
+correctness on another machine or under every failure condition.
+
+## Setup and demonstration
+
+The project requires Linux and Python **3.11 or newer**. The setup script uses APT
+for optional system-package installation. The VM guide targets Ubuntu 24.04 or
+Debian 12+, but clean installations on those versions have **not** been validated
+in the recorded run. Bubblewrap must support the required namespace options, and
+the VM's kernel/security policy must permit them. Installation alone does not
+prove isolation works.
+
+From the checkout root, as an ordinary non-root user:
 
 ```bash
-# Installs VM system dependencies only because --install-system is explicit.
+# Explicitly install system dependencies, then create/update .venv.
 bash scripts/setup_vm.sh --install-system
 source .venv/bin/activate
+
+# Require actual sandbox capability for the full demonstration.
 python doctor.py --require-sandbox
 python scripts/verify.py --require-sandbox
 python demo.py --output-dir artifacts/demo --require-sandbox
 ```
 
-The default demo needs no API key or privilege escalation. Setup needs network
-access to install dependencies; demonstrations work offline afterward. If the VM
-cannot provide verified isolation, the required sandbox check fails and execution
-is refused. Review [validation results](docs/VALIDATION_REPORT.md) for what was
-actually tested in the development environment.
+If system dependencies are already installed, use `bash scripts/setup_vm.sh`
+without `--install-system`. Setup installs the Python requirements and this
+checkout in editable mode. It does not enable services, configure cgroup
+delegation, or grant optimizer capabilities. Dependency installation normally
+requires network access. The standard demo subsequently runs offline without an
+API key; actual APT transactions and optional online model requests may need
+network access.
 
-## Use each component
+The combined demo exercises real policy/controller/journal code through a
+**synthetic optimizer backend**, trains a **synthetic ML fixture**, runs a read-only
+NLI command, previews an APT plan, saves a Bash script without executing it, and
+runs a harmless example inside verified isolation. It does not install packages
+or change real process priorities. Reports are written to
+`artifacts/demo/report.json` and `artifacts/verification/report.json`.
+
+Without `--require-sandbox`, unavailable isolation can produce a partial demo;
+that is not a successful demonstration of isolated execution. Follow the
+[VM setup and walkthrough guide](docs/VM_DEMO_GUIDE.md) before presenting.
+
+## 1. Process optimization
+
+The optimizer samples process and system metrics, detects sustained user work,
+classifies processes, and proposes changes only for explicitly opted-in
+background executables. It does not determine automatically which applications
+are unnecessary. Observation is the default, and there are no default targets.
 
 ```bash
-# Live observation; no resource changes and no model retraining.
+# Observe continuously without collecting ML training data or retraining.
 python main.py --no-ml-training
-# Deterministic detection only.
+
+# Use deterministic workload detection without the ML layer.
 python main.py --no-ml
-# A single initial sample (CPU/IO rates need subsequent samples).
+
+# One initial observation; CPU/IO rate counters need subsequent samples.
 python main.py --once --no-ml-training
-
-# Optional reproducible SYNTHETIC ML training, never a real-accuracy benchmark.
-python -m scripts.train_demo_model --output-dir artifacts/demo-model
-python main.py --ml-model artifacts/demo-model/workload_model.json --no-ml-training
-
-# Preview a supported intent, then approve interactively.
-python -m nli.cli_interface --offline -c "show memory usage"
-# --yes is explicit approval for this one read-only command.
-python -m nli.cli_interface --offline --yes -c "show disk usage"
-
-# Inspect without executing; run only a harmless supplied example for the demo.
-python -m sandbox.cli inspect examples/sandbox/isolation_demo.py
-python -m sandbox.cli doctor
-python -m sandbox.cli run examples/sandbox/isolation_demo.py --timeout 5
 ```
 
-Editable installation also provides `ai-os`, `ai-os-cli`, `ai-os-sandbox`,
-`ai-os-demo`, and `ai-os-doctor`. Run the documented VM workflow from this checkout.
-See the [ML guide](docs/ml-guide.md), [CLI guide](docs/cli-guide.md),
-and [sandbox guide](docs/sandbox-guide.md) for supported options and limitations.
+Default polling is every five seconds, activation requires 15 seconds of
+sustained activity, and release uses a 20-second quiet window. Terminal foreground
+dependencies are protected. `--foreground-pid PID` additionally protects a chosen
+application tree using PID and process start time. There is no desktop-specific
+active-window detector or GPU telemetry.
 
-```text
-Live monitor -> deterministic sustained workload -> process classification -> policy
-                         ^                                  |
-                   advisory ML labels                       v
-                                              live identity/safety checks
-                                                           |
-                              recovery watchdog <-> journal <-> Linux controls
+### Policy and live controls
 
-User intent -> constrained proposal -> preview/approval -> dedicated PTY
-Downloaded file -> quarantine/inspection -> verified isolation -> behavior report
-```
-
-ML refines an already established HEAVY_UNKNOWN workload label. It cannot choose
-target PIDs, relax protection, or grant action authority. Model persistence uses
-validated JSON trees; runtime ML never loads pickle files. Continuous observation
-collects heuristic-labelled samples by default; `--no-ml-training` disables
-collection and training. `--ml-train-now` trains from collected data only if data
-and validation gates pass. Synthetic data demonstrates the pipeline, not measured
-real-world accuracy.
-
-Sampling defaults to five seconds, workload activation to 15 seconds, and release
-to 20 quiet seconds. Protect a known application tree with `--foreground-pid PID`;
-the pin includes start time to detect PID reuse. Terminal foreground dependencies
-are protected automatically. GUI active-window detection is not implemented.
-
-## Explicit background policy
-
-Copy and edit `examples/optimizer-policy.json`. Its placeholder matches no real
-application. Choose an exact executable that you understand is optional background
-work; do not opt in a shared interpreter such as Python to target just one script.
-Rules apply to all instances of the exact executable except protected processes.
+Edit [examples/optimizer-policy.json](examples/optimizer-policy.json) to identify
+an exact background executable before enabling changes. The supplied path is a
+placeholder. Rules can match multiple instances of that executable; using a shared
+interpreter such as Python does not restrict a rule to one script.
 
 ```bash
+# Review proposals first.
 python main.py --policy examples/optimizer-policy.json
+
+# Explicitly enable controls after editing the policy and checking permissions.
 python main.py --policy examples/optimizer-policy.json --apply
 ```
 
-`--apply` is required for changes. It starts an independent recovery worker before
-allowing any action. Existing pending actions are restored before new work starts.
+| Strategy | Implemented behavior | Main requirements |
+| --- | --- | --- |
+| `RENICE` | Lower the process leader's scheduling priority and record its original value | CPU contention and permission to restore priority: `CAP_SYS_NICE` or sufficient target-process `RLIMIT_NICE` |
+| `CPU_LIMIT` | Apply `cpu.max` in a managed cgroup | Explicitly delegated cgroup v2 subtree with the CPU controller enabled |
+| `CGROUP` | Apply a CPU quota and/or soft `memory.high` limit | Appropriate delegated controllers and configured memory headroom |
+| `SUSPEND` | Stop/resume an explicitly optional background process | `BACKGROUND_OPTIONAL`, policy `allow_suspend: true`, CLI `--allow-suspend`, and additional status/IO/child checks |
 
-Renicing requires `CAP_SYS_NICE` or a sufficient **target process** `RLIMIT_NICE` to
-restore the original priority. When restoration is not possible, AI_OS refuses the
-change. It does not request sudo or grant capabilities automatically. Do not grant
-capabilities to a general-purpose Python interpreter. See the optional narrowly
-configured systemd service template in `deploy/` and the deployment notes below.
+Strategies are selected by policy; the optimizer does not escalate automatically
+from renicing to suspension. CPU quota percentages refer to one logical CPU.
+`memory.high` is a soft limit, requires headroom above current RSS, and does not
+guarantee immediate memory reclamation. Suspending a process can still affect
+other work if it holds locks; the checks cannot prove the absence of dependencies.
 
-Supported explicit strategies:
+Cgroup operation requires `--cgroup-root` pointing to an already delegated subtree.
+The target must already be within that subtree, and the original source group
+must remain available for restoration. AI_OS does not enable controllers globally
+or set up delegation. Native renice does not cover every thread or descendant.
+Numeric-PID cgroup migration also retains a kernel-interface PID-reuse race despite
+identity checks around migration.
 
-| Strategy | Behavior | Requirements |
-|---|---|---|
-| `RENICE` | Lower priority to absolute `nice` target; save/restore original | Restoration permission, real CPU contention |
-| `CPU_LIMIT` | Dedicated cgroup with `cpu.max` | Delegated cgroup v2 subtree, enabled CPU controller |
-| `CGROUP` | CPU quota and/or soft `memory.high` limit | Relevant controllers and memory headroom |
-| `SUSPEND` | Guarded stop/resume | `BACKGROUND_OPTIONAL`, policy `allow_suspend: true`, CLI `--allow-suspend`, no IO history or children |
+### Protection and recovery
 
-Stronger strategies are selected only by explicit policy, never automatically after
-renicing. CPU quota percentages are percentages of **one logical CPU** (1–100).
-Memory pressure protection uses `memory.high`, not an OOM-triggering `memory.max`.
-The configured soft ceiling must remain at least 25% above current RSS; it limits
-future growth rather than promising immediate memory reclamation.
+The planning and execution paths check process identity, executable, owner,
+status and protected dependencies. Root-owned processes, processes outside the
+configured non-root UID, inaccessible metadata, and identified critical services
+are excluded from eligibility. These checks reduce risk; they do not prove that
+an opted-in executable is harmless or semantically safe to pause.
 
-Example cgroup rule:
-
-```json
-{
-  "background_processes": [{
-    "executable": "/absolute/path/to/background-worker",
-    "strategy": "CGROUP",
-    "cpu_quota_percent": 25,
-    "memory_high_bytes": 1073741824
-  }]
-}
-```
-
-Pass `--cgroup-root /sys/fs/cgroup/.../delegated-subtree`. The acting user must own
-that subtree, and target processes must already be inside it. Controllers must be
-enabled by the administrator/service manager. AI_OS creates private child groups;
-it never enables controllers globally, moves system services into its scope, or
-changes cgroup ownership. The source group must remain available for restoration.
-
-## Safety and recovery
-
-- Unknown/inaccessible processes and root/other-user processes are never eligible.
-- Structural protections cover init/kernel tasks, critical system/desktop services,
-  mixed-UID privileged tasks, foreground dependencies, workload trees, and AI_OS.
-- Actions require exact executable opt-in, confidence, sustained user work, actual
-  pressure, and meaningful resource usage by the target.
-- Live PID/start time, executable, owner, status, and foreground checks precede
-  controls. Process names alone cannot authorize an action.
-- No routine kill, arbitrary shell execution, or LLM control exists in this path.
-- Private versioned JSON records are persisted before changes using atomic replace
-  and fsync. A lifetime flock prevents two controllers sharing the same journal.
-- Workload completion, foreground transitions, stale/incomplete monitoring, normal
-  shutdown, and restart recovery trigger restoration. A pipe-connected watchdog
-  can recover after the main optimizer is killed unexpectedly.
-- Cgroup recovery also restores children born in the managed group. Failed recovery
-  remains recorded and visible; the watchdog retries rather than forgetting it.
-
-Manual recovery uses the same UID, state path, and cgroup root as the original run:
+Live apply mode starts a recovery worker and writes private action records before
+mutations. A journal lock prevents concurrent controllers from sharing the same
+state file. Workload release, protection changes, stale observations and shutdown
+trigger restoration attempts. Pending actions are recovered before new work.
 
 ```bash
 python main.py --recover
 ```
 
-Default state: `data/runtime/optimizer-state.json` (private directory and files).
-Use `--state-file` to choose a dedicated directory. A system service must use a state
-path and runtime account it can read/write; do not share journals across different
-runtime accounts. A non-root process can only manage its own UID; a privileged
-instance must explicitly choose a non-root `--target-uid`.
+Use the original runtime account, privileges, target UID, state path, and cgroup
+root when applicable. The default journal is
+`data/runtime/optimizer-state.json`; `--state-file` selects another location.
+A privileged optimizer must specify a non-root `--target-uid`.
 
-The watchdog must survive to recover immediately. If both it and the main process
-are killed, restore on the next launch or use `--recover`. Permission loss, changed
-executables, outside interference, or deletion of the source cgroup may require
-operator intervention. A journal is recovery evidence, not a guarantee that the OS
-will always allow restoration.
+Recovery can fail after permission loss, executable changes, external interference
+or deletion of a source cgroup. If both the optimizer and watchdog die, recovery
+must wait for a later launch or manual invocation. Failed actions remain recorded;
+restoration is not guaranteed. An optional, uninstalled service template is in
+[deploy/ai-os-optimizer.service.example](deploy/ai-os-optimizer.service.example).
 
-## Checks and presentation
+### What the ML layer does
+
+ML may refine the label of an already established, protected `HEAVY_UNKNOWN`
+workload. It cannot activate work on its own, select target PIDs, or bypass
+eligibility and control checks. The deterministic path works without a model.
+
+```bash
+# Generate a clearly labelled synthetic dataset and demonstration model.
+python -m scripts.train_demo_model --output-dir artifacts/demo-model
+
+# Explicitly load that demonstration model for observation.
+python main.py --ml-model artifacts/demo-model/workload_model.json --no-ml-training
+```
+
+Continuous ML-enabled observation collects heuristic-labelled samples by default.
+`--no-ml-training` disables collection and training; `--ml-train-now` attempts
+training from collected data subject to data and validation requirements. Training
+uses an 80% chronological training partition and 20% holdout. Agreement with
+heuristic labels, especially on synthetic data, is not independently measured
+real-world accuracy.
+
+The active workload classifier loads validated JSON trees. Legacy anomaly-analysis
+code also remains in `src/ai/`; its older persistence code is separate from the
+active workload classifier and does not authorize optimizer actions. See the
+[ML guide](docs/ml-guide.md) for model/data validation and training limits.
+
+## 2. Natural-language interface
+
+The CLI maps supported phrases to canonical operations, displays their effect and
+arguments, and asks for approval. Execution checks the proposal again and binds
+approval to its exact contents. Commands run in a dedicated PTY session; a PTY is
+terminal separation, not a filesystem or security sandbox.
+
+```bash
+python -m nli.cli_interface --offline
+python -m nli.cli_interface -c 'show memory usage'
+python -m nli.cli_interface -c 'check storage'
+python -m nli.cli_interface --workspace . -c 'find files named "*.py"'
+```
+
+Offline requests also cover CPU usage, top processes, system summary, current
+directory and file listing. Searches match filenames/globs, skip symlinks, inspect
+at most four directory levels and return at most 1,000 regular files. They do not
+search file contents. `--workspace` selects the root. This is an application-level
+restriction, not protection against all concurrent filesystem changes.
+
+### APT packages and passwords
+
+Package management supports exact Debian/Ubuntu repository package names. It does
+not install arbitrary URLs, local `.deb` files, pip/npm packages, or configure
+repositories. Application display names are not automatically translated into
+package names.
+
+```bash
+# Preview without changing packages or prompting for a password.
+python -m nli.cli_interface --dry-run -c 'install apps git and curl'
+
+# Interactive operations: each privileged step requires password entry.
+python -m nli.cli_interface -c 'install package vlc'
+python -m nli.cli_interface -c 'uninstall package vlc'
+python -m nli.cli_interface -c 'sudo apt update'
+```
+
+Installation runs **APT index update → install → APT index update**, using
+`apt-get`. Before install/removal, it verifies exact package names, displays an
+APT dependency simulation and asks for another explicit confirmation. Installs
+refuse removals; removal can include dependent packages shown by APT, retains
+configuration files, and does not request purge/autoremove. Existing named
+packages may be upgraded during installation.
+
+Each privileged APT step explains its effect and requires fresh hidden password
+entry. Running the assistant as root or using noninteractive package execution is
+rejected, and `--yes` does not bypass package approval/passwords. The worker clears
+cached credentials, authenticates separately through sudo, runs the exact APT
+command, and attempts to clear the timestamp afterward. Passwords are not written
+to logs, arguments or environment variables and are not passed to APT stdin.
+They briefly exist in process memory.
+
+**Password entry and password verification are different:** sudoers remains the
+authentication authority. With `NOPASSWD`, the CLI still asks for nonempty input,
+but sudo may not verify that password. Policies that prohibit credential caching
+or restrict sudo validation may reject this workflow. The code does not change
+those policies. The separate setup script uses ordinary sudo behavior; it does
+not use this NLI password mechanism.
+
+Failures stop remaining steps without rolling back earlier ones. A failed final
+index update can therefore leave a successfully installed package. APT transactions
+have no enforced wall timeout: cancellation requests interruption and waits for
+subprocess exit, while output limits only truncate retained output. A stuck
+transaction can require operator intervention. Ordinary read-only commands retain
+bounded timeouts and process-group cleanup.
+
+### Bash authoring
+
+```bash
+python -m nli.cli_interface --write-script 'report storage usage' --output-script storage.sh
+python -m nli.cli_interface --write-script 'backup directory' --output-script backup.sh
+```
+
+Offline templates cover system/storage reports, directory backups and filename
+searches. Other requests require optional online generation through Gemini:
+
+```bash
+python -m pip install -e '.[online]'
+# Configure GEMINI_API_KEY and GEMINI_MODEL in your environment first.
+python -m nli.cli_interface --online --write-script 'Count lines in each text file' --output-script count-lines.sh
+```
+
+Online requests may be sent to the configured provider. There is no live-provider
+validation in the recorded test run; tests use substitute responses. Known offline
+templates remain local. The CLI does not automatically load `.env` files.
+
+Scripts are previewed, checked with Bash's syntax parser, and saved after approval
+as new private files inside the workspace. Existing files and symlink destinations
+are rejected. **Authored scripts are never automatically executed.** A successful
+syntax check does not prove safety, correctness, or agreement with the generated
+explanation. Manually running a saved script is outside the NLI password gate.
+
+`--dry-run` previews without executing/saving. `--yes` may approve one read-only
+operation or one script save. See the [CLI guide](docs/cli-guide.md) and
+[script guide](docs/script-guide.md) for examples, limits and API usage.
+
+## 3. Artifact inspection and sandbox execution
+
+```bash
+python -m sandbox.cli inspect examples/sandbox/isolation_demo.py
+python -m sandbox.cli quarantine examples/sandbox/isolation_demo.py --directory artifacts/quarantine
+python -m sandbox.cli doctor
+python -m sandbox.cli run examples/sandbox/isolation_demo.py --timeout 5
+```
+
+Inspection reports metadata, a digest, format and simple text-pattern indicators.
+Quarantine copies inert bytes into a private directory. Neither operation executes
+the artifact or establishes whether it is malicious. Inputs are limited to regular
+files up to 10 MiB; symlinks and special files are rejected.
+
+Execution supports Python and POSIX shell scripts only. Python uses the system
+`/usr/bin/python3 -I -S`, without project-venv dependencies. Shell scripts use
+`/bin/sh`, regardless of shebang, so arbitrary Bash scripts are not necessarily
+compatible. The runner does not execute arbitrary applications, binaries, archives
+or package/library installations.
+
+Before each run, a harmless capability probe checks the required bubblewrap
+isolation. Failure blocks execution; there is no host-execution fallback. The
+layout separates namespaces, clears the environment, hides host home/project and
+host `/etc`, and exposes runtime directories read-only. Those runtime trees remain
+readable in full. Reports contain bounded stdout/stderr; produced files are not
+exported.
+
+The default timeout is five seconds, configurable up to 30. Limits include
+per-process CPU/address space, per-file size, open files and shared-host-UID process
+counts. There are **no aggregate memory/disk/IO quotas, seccomp filter, syscall
+tracing or malware-scoring engine**. Namespace isolation shares the host kernel
+and does not protect against kernel vulnerabilities. Use the harmless examples
+in a disposable VM with resource caps. See the [sandbox guide](docs/sandbox-guide.md)
+for the exact boundary and capability requirements.
+
+## Verification, benchmarks and project layout
 
 ```bash
 python scripts/verify.py --require-sandbox
@@ -186,31 +320,43 @@ python -m pytest -q
 python benchmark.py --mode observe --runs 3 --duration 2 --output artifacts/observation.json
 ```
 
-Verification writes `artifacts/verification/report.json` and per-check logs.
-The combined demo writes `artifacts/demo/report.json`. The observer benchmark
-measures observation overhead only; it cannot establish optimization gains.
-The optional `--mode renice` benchmark applies/restores priority only on its own
-bounded disposable worker and reports failure when permissions are inadequate.
-See the VM guide before using its privileged mode in a disposable VM.
+The verifier checks dependencies, environment capability, the complete test suite,
+optimizer observation, the combined demo and Python source syntax. It does not
+validate live privileged optimizer actions, real password-entered package
+transactions, or the optional online provider. Sandbox tests can skip when
+isolation is unavailable; use `--require-sandbox` and inspect the logs before
+claiming the complete demo passed.
 
-Tests cover pure policy, fake cgroups, identity/permission failures, durable
-recovery, ML validation, CLI execution boundaries, and real harmless sandbox
-execution when isolation is available. Unit tests do not modify production
-process priorities or host cgroups. The older `benchmark_report.html` is historical
-and must not be presented as evidence for the current implementation.
+The observation benchmark measures monitoring overhead. The separate `--mode
+renice` benchmark measures a priority change on its own disposable worker and
+requires suitable restoration permissions; instructions are in the VM guide.
+Neither is evidence of end-to-end ML optimization gains. No real-workload speedup
+is established. The older `benchmark_report.html` is historical, not validation
+of the current implementation.
 
-The [slide-generation brief](docs/AI_OS_PRESENTATION_BRIEF.md) is ready to give an
-LLM to create a presentation. Use [current validation evidence](docs/VALIDATION_REPORT.md)
-for test results, and keep synthetic demonstrations labelled.
+| Location | Purpose |
+| --- | --- |
+| `main.py`, `src/monitor/`, `src/optimization/`, `src/controller/` | Observation, policy, controls and recovery |
+| `src/ai/` | ML features, collection, training and inference; legacy anomaly-analysis code |
+| `nli/` | Intent parsing, proposals, PTY execution, APT worker and script authoring |
+| `sandbox/` | Inspection, quarantine, capability probe and isolated execution |
+| `doctor.py`, `demo.py`, `scripts/` | Preflight, synthetic/harmless demonstrations, setup and verification |
+| `tests/` | Regression tests, fixtures and supported real harmless execution checks |
+| `examples/`, `deploy/` | Example policy/scripts and optional service template |
+| `docs/` | Component guides, VM walkthrough, validation record and presentation brief |
+| `data/`, `logs/`, `artifacts/` | Runtime data and generated outputs; gitignored |
 
-## Remaining scope
+Editable installation exposes `ai-os`, `ai-os-cli`, `ai-os-sandbox`, `ai-os-demo`
+and `ai-os-doctor`. The documented workflow runs from the source checkout. For
+slides, use [AI_OS_PRESENTATION_BRIEF.md](docs/AI_OS_PRESENTATION_BRIEF.md) alongside
+the validation record and keep synthetic examples explicitly labelled.
 
-This is a bounded VM demonstration prototype, not a production security boundary
-or a general autonomous administrator. Background eligibility requires explicit
-executable rules; the system does not guess which applications are unnecessary.
-GPU telemetry, desktop focus adapters, broad package installation/testing,
-independently labelled real-workload evaluation, and end-to-end performance
-improvement measurements remain future work. Resource-control privileges and
-cgroup delegation must be validated on the target VM. Sandbox CPU/memory limits
-are per-process and its tmpfs has no aggregate quota; cap the disposable VM and
-use only the supplied harmless examples during presentation.
+## Work still required
+
+The original project vision is broader than this prototype. Remaining work includes
+independent real-workload ML evaluation, end-to-end performance measurements,
+target-VM validation of live controls and password-entered APT transactions,
+desktop focus/GPU integration, automatic download interception, broader artifact
+and package support, and security evaluation beyond harmless demonstration files.
+The repository does not establish production readiness or a guarantee against
+system damage, malware, supply-chain attacks, or all runtime failures.

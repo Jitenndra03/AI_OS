@@ -3,6 +3,7 @@
 No eval, shell, command strings or user-provided Python are accepted.
 """
 import fcntl
+import fnmatch
 import os
 import termios
 from pathlib import Path
@@ -10,7 +11,7 @@ import sys
 import time
 
 
-def main(action):
+def main(action, pattern=None):
     root = Path.cwd()
     if action == "current_directory":
         print(root)
@@ -31,7 +32,8 @@ def main(action):
                 dirs[:] = []
             for name in files:
                 path = Path(directory, name)
-                if path.is_symlink() or not path.is_file():
+                if (path.is_symlink() or not path.is_file()
+                        or (pattern is not None and not fnmatch.fnmatchcase(name, pattern))):
                     continue
                 print(repr(str(path.relative_to(root))))
                 count += 1
@@ -78,12 +80,12 @@ def main(action):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[1] != 'find_files'):
         sys.exit(2)
     try:
         if os.isatty(0) and os.getsid(0) == os.getpid():
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
-        sys.exit(main(sys.argv[1]))
+        sys.exit(main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else None))
     except (OSError, ImportError) as error:
         print(f"Operation unavailable: {error}", file=sys.stderr)
         sys.exit(1)

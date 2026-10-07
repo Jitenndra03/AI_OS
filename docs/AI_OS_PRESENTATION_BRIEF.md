@@ -30,7 +30,7 @@ All three components have bounded demonstrations:
 | Component | Implemented behavior | Boundary |
 |---|---|---|
 | Process optimization | Monitoring, sustained workload detection, optional ML label refinement, explicit background policies, live safety checks, resource controllers, recovery journal | Observation by default; actual resource changes require explicit configuration and permission. The combined demo simulates Linux controls. |
-| Natural-language CLI | Offline request mapping, immutable typed proposals, approval bound to exact proposal content, separate PTY-backed execution session | Finite read-only operations; no arbitrary shell commands. PTY separation is not filesystem isolation. |
+| Natural-language CLI | Offline request mapping, immutable typed proposals, approval bound to exact proposal content, separate PTY-backed execution session | Canonical checks/search plus password-gated APT plans; authored Bash is saved for review, never automatically executed. |
 | Artifact sandbox | Static inspection, private digest-addressed quarantine, explicit Python/POSIX-shell execution under bubblewrap, bounded reports | Capability probe required; unsupported isolation blocks execution. No proof of harmlessness or supply-chain prevention. |
 
 ### ML facts
@@ -88,7 +88,7 @@ No controlled experiment currently establishes a real-workload speedup. The lega
 | Component | Demonstration | Boundary |
 |---|---|---|
 | Optimizer | Detect, protect, propose, apply through fake controls, restore | Host mutations require a separate explicit apply setup |
-| Natural-language CLI | Request → proposal → approval → PTY output | Finite read-only operations |
+| Natural-language CLI | Request → proposal → approval → PTY output | Approved checks, password-gated APT, script authoring |
 | Sandbox | Inspect → quarantine → probe → isolated run → report | Requires working Linux isolation; otherwise blocks |
 
 **Visual:** Three columns with a resource chart, terminal, and isolated box.
@@ -222,7 +222,7 @@ flowchart LR
 
 ### Slide 11 — Natural Language to a Reviewed PTY Operation
 
-**Takeaway:** The CLI executes a small operation vocabulary instead of accepting arbitrary Bash.
+**Takeaway:** The CLI separates approved system operations, password-gated package changes, and reviewed Bash authoring.
 
 ```text
 Offline request → immutable typed proposal → exact-content approval
@@ -232,11 +232,12 @@ Offline request → immutable typed proposal → exact-content approval
 **On-slide content:**
 
 - CPU, memory, disk, process, and system summaries
-- Working-directory display, bounded file listing/search
-- Explicit approval bound to proposal content
-- Timeout, cancellation, output limits, child cleanup
+- Working-directory display, bounded filename/glob search
+- APT update → install → update; uninstall with dependency preview
+- Fresh hidden password for every privileged step
+- Bash preview, syntax check, approved save; no automatic script execution
 
-**Speaker notes:** The offline path needs no API key. The optional online classifier can only select from the same operations; generated shell code is not accepted. File queries do not read file contents. No writes, deletion, root operations, redirects, substitutions, or general shell pipelines are accepted. A dedicated PTY/session supports terminal behavior but does not provide kernel filesystem isolation. `--yes` is explicit approval of a single `-c` request, not blanket REPL approval.
+**Speaker notes:** The offline path needs no API key. Package plans use exact repository package names, explain commands, preview dependency changes, and require interactive password entry even with `--yes`; sudoers decides authentication. Passwords are not logged or passed to package processes. APT interruption waits for orderly subprocess exit; read-only commands retain bounded timeout/cleanup. Offline Bash templates cover reports, backups and searches; optional Gemini can author other requested scripts. Scripts are previewed and saved inside the workspace without overwrite, never automatically executed. Syntax checking is not a safety proof. A dedicated PTY is not filesystem isolation.
 
 ### Slide 12 — Artifact Sandbox: Inspect, Isolate, Report
 
@@ -365,7 +366,7 @@ Current features describe individual snapshots. Predicted probabilities have not
 
 **What can ML change?** Only the recognized label of an already sustained, protected unknown workload, subject to confidence gating. It cannot authorize resource targets or weaken protection.
 
-**Can the CLI safely execute any Bash command?** No. It accepts a fixed read-only operation set, validates exact arguments, binds approval to the proposal, and runs it through a bounded PTY execution path.
+**Can the CLI safely execute any Bash command?** No. It executes canonical system checks and password-gated APT plans. It can author Bash scripts for review and saving, but generated code is not automatically executed and syntax checks do not prove safety.
 
 **Does the sandbox prevent supply-chain attacks?** No. It provides local static inspection, quarantine, and bounded isolated script experiments. A finite observation does not prove an artifact, installer, dependency, or application harmless.
 

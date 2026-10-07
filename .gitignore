@@ -9,9 +9,17 @@ AI Kernel Integration For Linux.pdf
 TECHNICAL_REPORT.md
 
 data/
+docs/
+artifacts/
+ai_os_demo.egg-info/
 
 artifacts/
 *.egg-info/
 build/
 dist/
 .pytest_cache/
+
+AI_OS_FYP_Progress_Diary_Filled.docx
+AI_OS_FYP_Progress_Diary_Filled.pdf
+AI_OS_FYP_Progress_Diary.docx
+MEMORY.md

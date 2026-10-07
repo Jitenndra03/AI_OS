@@ -18,10 +18,10 @@ All six checks passed. Machine-readable evidence and logs are generated under
 | --- | --- |
 | Dependency consistency | `pip check`: no broken requirements |
 | Environment preflight | Required Linux/Python/dependencies/procfs and real sandbox probe passed |
-| Complete regression suite | **533 passed in 6.51 seconds; no failures or skips** |
+| Complete regression suite | **660 passed in 9.74 seconds; no failures or skips** |
 | Optimizer observation | Real `main.py --once --no-ml-training --ml-model <temporary absent model>` exited 0 |
 | Integrated offline demonstration | Optimization simulation, ML, CLI and real sandbox execution all passed |
-| Python source syntax | 69 files compiled for syntax without errors |
+| Python source syntax | 76 files compiled for syntax without errors |
 
 The tests include session-aware foreground protection, unknown-session conservative
 handling, PID/executable/UID revalidation, shared model-class import consistency,
@@ -51,6 +51,31 @@ and process cleanup, and actual harmless bubblewrap execution when available.
   Raw local report: `artifacts/observation-smoke.json`.
 - Setup shell syntax/help and `git diff --check` passed.
 
+## NLI extension validation
+
+The complete suite now includes 194 NLI tests. They cover exact package names,
+update → install → update sequencing, dependency simulation approval, rejected
+sudo bypass attempts, empty/failed password handling, isolation of passwords
+from APT stdin, cancellation that waits for child exit, and no remaining package
+steps after failure. Real harmless PTYs confirm hidden password input is absent
+from both streamed and captured output and that terminal settings are restored.
+
+File-search tests verify filename/glob matching and symlink exclusion. Bash tests
+cover syntax-only parsing with a clean environment, generated-code nonexecution,
+malformed online responses, quoted template parameters, path traversal/symlink
+rejection and exclusive private script creation. CLI preview/save routes are
+exercised end to end. The integrated demo now previews a package plan and saves
+an offline report script without running it.
+
+Package authentication and mutations use controlled substitutes in tests.
+Read-only actual APT simulations and exact package lookups passed. No live sudo
+command or package installation/removal was performed on the development host,
+and no real password was supplied. Test a password-entered transaction separately
+inside the disposable VM. Sudoers determines password verification; NOPASSWD and
+no-cache policies have the limitations described in [cli-guide.md](cli-guide.md).
+Online Bash generation is tested with substitute provider responses; no live
+Gemini call or API credential is required for the validated offline demo.
+
 ## Scope that remains environment-dependent
 
 The current account lacks CAP_SYS_NICE. Live privileged renice/restoration,
@@ -62,8 +87,8 @@ uses an explicitly synthetic optimizer actuator and requires no such privilege.
 
 No independently labelled real-application ML evaluation, broad malware or
 supply-chain detection validation, online Gemini API call, or end-to-end
-optimization speedup claim is established here. The CLI implements a constrained
-read-only vocabulary. The sandbox is a bounded script demonstrator with the
+optimization speedup claim is established here. The CLI now supports canonical read-only operations, password-gated APT plans,
+and reviewed Bash authoring; authored scripts are not automatically executed. The sandbox is a bounded script demonstrator with the
 resource/isolation limitations described in its guide, not a guarantee that an
 arbitrary downloaded application is safe.
 
